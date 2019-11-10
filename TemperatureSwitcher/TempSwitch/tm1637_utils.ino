@@ -57,3 +57,28 @@ void writeMinute(int value) {
 void writeSecond(int value) {
       writeValue(value, TEN_SEC_SEGMENT, SEC_SEGMENT, false);
 }
+
+void setSegments(byte addr, byte data)
+{
+  tm1637.start();
+  tm1637.writeByte(ADDR_FIXED);
+  tm1637.stop();
+  tm1637.start();
+  tm1637.writeByte(addr|0xc0);
+  if (point_blink) {
+    tm1637.writeByte(data + 0x80);  
+  } else {
+    tm1637.writeByte(data);  
+  }  
+  tm1637.stop();
+  tm1637.start();
+  tm1637.writeByte(tm1637.Cmd_DispCtrl);
+  tm1637.stop();
+}
+
+void writeAll(byte first, byte second, byte third, byte fourth) {
+  setSegments(0, first);
+  setSegments(1, second);
+  setSegments(2, third);
+  setSegments(3, fourth);  
+}

@@ -1,5 +1,6 @@
+#include <Bounce2.h>
 #include <OneWire.h>
-#include "TM1637.h"
+#include <TM1637.h>
 /************** БУКВЫ И СИМВОЛЫ *****************/
 #define _A 0x77
 #define _B 0x7f
@@ -56,74 +57,78 @@
 #define DIO 8
 #define TEN_SEC_SEGMENT 2
 #define SEC_SEGMENT 3
+#define PIN_RELAY 10
 TM1637 tm1637(CLK, DIO);
-
-int TEMP_INPUT_PIN = 3; // пин для датчика темперауры
-float temperature = 50; // very warm
 bool point_blink = false;
-
+// Для работы кнопки.
+const int PIN_BUTTON_PLUS = 5;
+const int PIN_BUTTON_MINUS = 6;
+int pressValue = LOW;
+int targetValue = 30;
+bool btnChecked = false;
 // Для работы датчика температуры
+int TEMP_INPUT_PIN = 3; // пин для датчика темперауры
 OneWire ds(TEMP_INPUT_PIN); // init temp sensor
+long lastUpdateTime = 0; // Переменная для хранения времени последнего считывания с датчика
+const int TEMP_UPDATE_TIME = 1000; // Определяем периодичность проверок
+float temperature = 0; // very warm
+bool isDetected = false;
+byte data[2];
 
 // the setup function runs once when you press reset or power the board
 void setup() {
   tm1637.init();
-  tm1637.set(BRIGHT_TYPICAL);  
-  tm1637.point(true);  
+  tm1637.set(BRIGHT_TYPICAL);
+  tm1637.point(true);
   writeAll(_0, _0, _0, _0);
-  
+
   Serial.begin(9600);
-}
 
-void setSegments(byte addr, byte data)
-{
-  tm1637.start();
-  tm1637.writeByte(ADDR_FIXED);
-  tm1637.stop();
-  tm1637.start();
-  tm1637.writeByte(addr|0xc0);
-  if (point_blink) {
-    tm1637.writeByte(data + 0x80);  
-  } else {
-    tm1637.writeByte(data);  
-  }  
-  tm1637.stop();
-  tm1637.start();
-  tm1637.writeByte(tm1637.Cmd_DispCtrl);
-  tm1637.stop();
-}
-
-void writeAll(byte first, byte second, byte third, byte fourth) {
-  setSegments(0, first);
-  setSegments(1, second);
-  setSegments(2, third);
-  setSegments(3, fourth);  
+  pinMode(PIN_BUTTON_PLUS, INPUT_PULLUP);
+  pinMode(PIN_BUTTON_MINUS, INPUT_PULLUP);
+  pinMode(PIN_RELAY, OUTPUT); // Объявляем пин реле как выход
+  digitalWrite(PIN_RELAY, LOW); // Выключаем реле - посылаем высокий сигнал
 }
 
 // the loop function runs over and over again forever
 void loop() {
-  byte data[2]; // Место для значения температуры   
-  ds.reset(); // Начинаем взаимодействие со сброса всех предыдущих команд и параметров
-  ds.write(0xCC); // Даем датчику DS18b20 команду пропустить поиск по адресу. В нашем случае только одно устрйоство 
-  ds.write(0x44); // Даем датчику DS18b20 команду измерить температуру. Само значение температуры мы еще не получаем - датчик его положит во внутреннюю память
+  detectTemperature();  
+  int btnValPlus = digitalRead(PIN_BUTTON_PLUS);
+  int btnValMinus = digitalRead(PIN_BUTTON_MINUS);
+  if ((btnValPlus == pressValue || btnValMinus == pressValue) && !btnChecked) {
+    //Serial.println("pressed");
+    if (btnValPlus == pressValue){
+      targetValue = targetValue + 1;
+    }
+    if (btnValMinus == pressValue){
+      targetValue = targetValue - 1;
+    }    
+    btnChecked = true;
+    delay(400);
+    writeMinute(targetValue);
+  } else {
+    if (btnChecked) {
+      //Serial.println("unpressed");
+    }
+    btnChecked = false;
+  }
 
-  delay(1000);                       // wait for a second      
-
-  ds.reset(); // Теперь готовимся получить значение измеренной температуры
-  ds.write(0xCC); 
-  ds.write(0xBE); // Просим передать нам значение регистров со значением температуры
- 
-  // Получаем и считываем ответ
-  data[0] = ds.read(); // Читаем младший байт значения температуры
-  data[1] = ds.read(); // А теперь старший
- 
-  // Формируем итоговое значение: 
-  //    - сперва "склеиваем" значение, 
-  //    - затем умножаем его на коэффициент, соответсвующий разрешающей способности (для 12 бит по умолчанию - это 0,0625)
-  temperature =  ((data[1] << 8) | data[0]) * 0.0625;   
-  Serial.println(temperature);
-  point_blink = !point_blink;
-  writeMinute(55); 
-  writeSecond(temperature + 0.5); 
-  delay(1000);                       // wait for a second
+  // Serial.println(sensorVal);
+  if (millis() - lastUpdateTime > TEMP_UPDATE_TIME)
+  {
+    point_blink = !point_blink;
+    temperature = getTemperature();
+    lastUpdateTime = millis();
+    writeMinute(targetValue);
+    int currTemp = temperature + 0.5;
+    writeSecond(currTemp);
+    if (targetValue > currTemp)
+    {
+      digitalWrite(PIN_RELAY, HIGH);
+      //Serial.println("ON");
+    } else {
+      digitalWrite(PIN_RELAY, LOW);
+      //Serial.println("OFF");
+    }
+  }
 }
